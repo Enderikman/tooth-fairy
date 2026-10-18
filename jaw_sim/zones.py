@@ -26,9 +26,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from .calibration import JawCalibration
-from .jaw import LOWER
+from .jaw import JAW_SCALE, LOWER
 
-CORRIDOR_WIDTH_MM = 20.0  # tongue-side strip next to the teeth where the tip may go
+CORRIDOR_WIDTH_MM = 20.0 * JAW_SCALE  # tongue-side strip next to the teeth where the tip may go (20 mm at real size)
 DEPTH_PER_JC = 0.0097  # mm of allowed depth per mm**2 of jaw size
 DEPTH_OFFSET_MM = 2.093
 ARCH_SAMPLE_MM = 0.5  # spacing of the parabola samples used for the distance test
@@ -77,8 +77,9 @@ class LowerJawCorridor:
         x46, y46, _ = self.frame.to_mouth(calibration.tooth_46)
         self.a = float(np.mean([y36 / x36**2, y46 / x46**2]))
         self.half_width = float(np.mean([abs(x36), abs(x46)]))
-        self.jaw_size = (abs(x36) + abs(x46)) * float(np.mean([y36, y46]))  # JC, mm**2
-        self.max_depth = DEPTH_PER_JC * self.jaw_size + DEPTH_OFFSET_MM
+        # JC and the depth formula are defined for a real-size jaw; the sim jaw may be JAW_SCALE times larger
+        self.jaw_size = (abs(x36) + abs(x46)) * float(np.mean([y36, y46])) / JAW_SCALE**2  # JC, mm**2
+        self.max_depth = (DEPTH_PER_JC * self.jaw_size + DEPTH_OFFSET_MM) * JAW_SCALE
         xs = np.arange(-self.half_width, self.half_width + ARCH_SAMPLE_MM / 2, ARCH_SAMPLE_MM)
         self.arch = np.column_stack([xs, self.a * xs**2])  # sampled lingual tooth line, 46 -> 36
         self.arch_depth = float(np.mean([y36, y46]))
