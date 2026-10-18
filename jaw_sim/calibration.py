@@ -79,17 +79,27 @@ class CalibrationRecorder:
         self.active = False
         self.recorded: dict[str, np.ndarray] = {}
         self.last_saved: Path | None = None
+        self.discarded = False
 
     def press_enter(self, marker_world: np.ndarray) -> None:
-        """Start calibration, or record the current marker position for the requested point."""
+        """Start calibration, or record the current marker position for the requested point.
+
+        A recording whose points do not form a jaw (e.g. the button pressed three times at one
+        spot) is discarded, so an existing good calibration.json is never overwritten by it.
+        """
         if not self.active:
             self.active = True
             self.recorded = {}
+            self.discarded = False
             return
         self.recorded[self.current_point()] = marker_world.copy()
         if len(self.recorded) == len(REFERENCE_POINTS):
-            self.last_saved = self._save()
             self.active = False
+            calibration = JawCalibration(*(LOWER.to_stl(self.recorded[name]) for name in REFERENCE_POINTS))
+            if calibration.usable():
+                self.last_saved = self._save()
+            else:
+                self.discarded = True
 
     def current_point(self) -> str:
         return REFERENCE_POINTS[len(self.recorded)]
@@ -99,6 +109,8 @@ class CalibrationRecorder:
         if self.active:
             step = len(self.recorded) + 1
             return f"CALIBRATION {step}/{len(REFERENCE_POINTS)}: put marker on {self.current_point()}, press Enter"
+        if self.discarded:
+            return "calibration DISCARDED: the three points do not form a jaw. Enter = start again"
         if self.last_saved:
             return f"saved {self.last_saved.name}; restart the viewer to use it. Enter = start again"
         return "Enter = start calibration"
