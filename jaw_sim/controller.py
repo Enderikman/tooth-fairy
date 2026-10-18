@@ -25,7 +25,7 @@ from dental_sim.controller import ARM_JOINTS, CONTROL_HZ, SuctionIK
 from so101_common import min_jerk
 
 from .ejector import SalivaEjector
-from .jaw import BITE_Z, FRONT_X, LOWER
+from .jaw import BITE_Z, FRONT_X, LOWER, world_offset
 from .zones import ForbiddenZones
 
 ALLOWED_RGBA = [0.1, 0.9, 0.2, 0.6]
@@ -74,13 +74,13 @@ class Pose(NamedTuple):
 
 def park_pose(side: int) -> Pose:
     """Pose waiting in front of the incisors, hook flat and rolled to the given side (+1 / -1)."""
-    tip = np.array([OUTSIDE_X, -side * SalivaEjector.hook_drop(), SHAFT_Z])
+    tip = np.array([OUTSIDE_X, -side * SalivaEjector.hook_drop(), SHAFT_Z]) + world_offset()
     return Pose("parked", tip, FLAT * side)
 
 
 def lifted_pose(label: str, tip: np.ndarray, side: int) -> Pose:
     """Pose above tip with the hook flat, the only height at which it may travel horizontally."""
-    return Pose(label, np.array([tip[0], tip[1], SHAFT_Z]), FLAT * side)
+    return Pose(label, np.array([tip[0], tip[1], SHAFT_Z + world_offset()[2]]), FLAT * side)
 
 
 def pose_side(value: float) -> int:

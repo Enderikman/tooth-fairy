@@ -78,9 +78,10 @@ class LeaderArm:
 class LeaderTarget:
     """Target source: the leader's joint angles, plus where they put the tip (for the zone check)."""
 
-    def __init__(self, model: mujoco.MjModel, leader: LeaderArm):
+    def __init__(self, model: mujoco.MjModel, leader: LeaderArm, label: str = "leader"):
         self.model = model
         self.leader = leader
+        self.label = label
         self.scratch = mujoco.MjData(model)  # forward kinematics only, never stepped
         self.tip = model.site("suction_tip").id
         self.marker = model.body("target").mocapid[0]
@@ -90,20 +91,24 @@ class LeaderTarget:
         self.angles = {name: 0.0 for name in MOTOR_IDS}
 
     def start(self) -> Pose:
-        return self._pose("leader")
+        return self.read()
 
     def target(self, data: mujoco.MjData) -> Pose:
         """Current leader pose; the green marker is moved to its tip so the zone colour is visible."""
-        self.angles = {name: float(np.clip(a, self.lower[name], self.upper[name])) for name, a in self.leader.angles().items()}
-        pose = self._pose("leader")
+        pose = self.read()
         data.mocap_pos[self.marker] = pose.tip
         return pose
 
-    def _pose(self, label: str) -> Pose:
-        """Pose of the arm at self.angles: tip from forward kinematics, joints copied."""
+    def read(self) -> Pose:
+        """Reads the servos and returns the pose they are in (joint ranges of the sim model applied)."""
+        self.angles = {name: float(np.clip(a, self.lower[name], self.upper[name])) for name, a in self.leader.angles().items()}
+        return self.pose()
+
+    def pose(self) -> Pose:
+        """Pose of the arm at the last read angles: tip from forward kinematics, joints copied."""
         for name, angle in self.angles.items():
             self.scratch.qpos[self.qpos_index[name]] = angle
         self.scratch.qpos[self.qpos_index["gripper"]] = GRIPPER_CLOSED_ON_TUBE
         mujoco.mj_kinematics(self.model, self.scratch)
         joints = np.array([self.angles[name] for name in ARM_JOINTS])
-        return Pose(label, self.scratch.site_xpos[self.tip].copy(), self.angles["wrist_roll"], joints)
+        return Pose(self.label, self.scratch.site_xpos[self.tip].copy(), self.angles["wrist_roll"], joints)

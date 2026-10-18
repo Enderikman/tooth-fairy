@@ -5,6 +5,8 @@
     uv run mjpython -m jaw_sim route           viewer; automatic route: enter, suction at 46, sweep to 43
     uv run python   -m jaw_sim check           headless: route plus every command, how often the zones blocked
     uv run mjpython -m jaw_sim leader          viewer; the simulated arm copies the real SO-101 leader arm
+    JAW_SCALE=1 uv run mjpython -m jaw_sim follower   viewer; the real follower arm, no leader: move it by hand,
+                                                     calibrate the jaw on it, then let the sim drive it (b / c)
 
 The viewer needs `mjpython` (macOS), which comes with the mujoco package.
 
@@ -32,9 +34,16 @@ import mujoco.viewer
 import numpy as np
 
 from .buttons import ButtonListener
-from .calibration import CalibrationRecorder, JawCalibration
+from .calibration import REFERENCE_POINTS, CalibrationRecorder, JawCalibration
 from .controller import DraggedTarget, GuardedController, RouteTarget, marker_quat
-from .jaw import JAWS
+from .follower import (
+    OFFSET_FILE,
+    FollowerArm,
+    FollowerTarget,
+    load_world_offset,
+    save_world_offset,
+)
+from .jaw import JAW_SCALE, JAWS, LOWER, set_world_offset, world_offset
 from .leader import LeaderArm, LeaderTarget, find_port
 from .scene import FORBIDDEN_GROUP, JawSceneBuilder
 from .voice import VoiceListener
@@ -46,9 +55,10 @@ SCREEN_FPS = 60.0
 KEY_ENTER = 257  # GLFW key code (layout independent, unlike letter/symbol keys)
 AXIS_LENGTH = 0.015  # m, drawn STL axes at each jaw origin
 AXIS_RGBA = ([1, 0, 0, 1], [0, 0.8, 0, 1], [0, 0.3, 1, 1])  # x red, y green, z blue
-# GLFW key codes of the viewer keys: 6 7 8 9 and . (letters, 0-5 and , are taken by the viewer)
-COMMAND_KEYS = {54: "46", 55: "43", 56: "33", 57: "36", 46: "park", KEY_ENTER: "calibrate"}
+# GLFW key codes of the viewer keys: 6 7 8 9 . n m (other letters, 0-5 and , are taken by the viewer)
+COMMAND_KEYS = {54: "46", 55: "43", 56: "33", 57: "36", 46: "park", KEY_ENTER: "calibrate", 78: "calibrate_start", 77: "calibrate_point"}
 COMMAND_KEY_HELP = "buttons a=calibrate b=operate c=stop d=park | keys 6=46 7=43 8=33 9=36 .=park"
+FOLLOWER_KEY_HELP = "n=calibration start  m=record point  b=drive  c=stop/release  d/.=park  6=46 7=43 8=33 9=36"
 COMMAND_STEP_S = 0.1  # headless check: simulated time per step while waiting for a command
 COMMAND_CAP_S = 30.0  # headless check: give up on a command after this much simulated time
 
@@ -56,16 +66,22 @@ COMMAND_CAP_S = 30.0  # headless check: give up on a command after this much sim
 class JawSimulation:
     """Scene + zones + controller + state, wired together for one mode ("drag" or "route")."""
 
-    def __init__(self, mode: str, voice: bool = False, leader: "LeaderArm | None" = None):
+    def __init__(self, mode: str, voice: bool = False, leader: "LeaderArm | None" = None, follower: "FollowerArm | None" = None):
         self.mode = mode
+        self.jaw_offset_file = OFFSET_FILE if mode == "follower" and OFFSET_FILE.exists() else None
+        if mode == "follower":
+            set_world_offset(load_world_offset())
         self.calibration_points = JawCalibration.load_or_default()
         self.zones = ForbiddenZones(self.calibration_points)
         self.model = JawSceneBuilder(self.zones).build()
         self.data = mujoco.MjData(self.model)
+        self.head = self.model.body("phantom_head").id
         if mode == "drag":
             self.source = DraggedTarget(self.model, self.zones)
         elif mode == "leader":
             self.source = LeaderTarget(self.model, leader)
+        elif mode == "follower":
+            self.source = FollowerTarget(self.model, follower, self.zones)
         else:
             self.source = RouteTarget(self.model, self.zones)
         self.controller = GuardedController(self.model, self.source, self.zones)
@@ -132,35 +148,69 @@ class JawSimulation:
         """Runs one command, whether it came from a button, a key or a voice phrase.
 
         Args:
-            name: "calibrate", "operate", "stop", "park", or a tooth ("46", "43", "33", "36").
+            name: "calibrate", "calibrate_start", "calibrate_point", "operate", "stop", "park",
+                or a tooth ("46", "43", "33", "36").
                 Tooth commands are ignored unless the sim is operating (after "operate").
-                In leader mode only "calibrate" does something: the leader steers, not the commands.
+                "calibrate" (button a / Enter) is the one-button flow of drag and leader mode and is
+                ignored in follower mode, which uses the two separate buttons "calibrate_start" (n) and
+                "calibrate_point" (m) so that a bouncing button cannot restart a running calibration.
+                In leader mode only calibrating does something: the leader steers, not the commands.
+                In follower mode "operate" / "stop" also switch the real arm's torque on / off, and
+                recording the incisal point moves the simulated jaw onto the real tip.
 
         Raises:
             ValueError: If the simulation is in "route" mode, or the name is unknown.
         """
         if self.mode == "route":
-            raise ValueError("commands need drag or leader mode")
+            raise ValueError("commands need drag, leader or follower mode")
         self.last_command = name
-        if name == "calibrate":
-            # drag: the marker is where the user put it; leader: the real tip position counts
-            point = self.data.mocap_pos[self.marker] if self.mode == "drag" else self.data.site_xpos[self.tip]
-            self.calibration.press_enter(point)
-            self.controller.guarded = not self.calibration.active  # touching the teeth is the point of calibrating
+        if name in ("calibrate", "calibrate_start", "calibrate_point"):
+            self._calibrate(name)
         elif self.mode == "leader":
             return
         elif name == "operate":
+            if self.mode == "follower":
+                self.source.engage(self.data, self.controller)
             self.operating = True
         elif name == "stop":
             self.source.stop()
+            self.calibration.cancel()
+            self.controller.guarded = True
             self.operating = False
         elif name == "park":
-            self.source.park(self.data.time)
+            if self.operating or self.mode == "drag":
+                self.source.park(self.data.time)
         elif name in TOOTH_ACROSS:
             if self.operating:
                 self.source.goto(name, self.data.time)
         else:
             raise ValueError(f"unknown command {name!r}")
+
+    def _calibrate(self, name: str) -> None:
+        """One calibration button press; which presses count depends on the mode (see `command`)."""
+        if self.mode == "follower":
+            if name == "calibrate":
+                return
+            point = self.source.real_tip()
+            if name == "calibrate_start":
+                self.calibration.start()
+            elif self.calibration.record(point) == REFERENCE_POINTS[0]:
+                self._place_jaw(point)
+        elif name == "calibrate":
+            # drag: the marker is where the user put it; leader: the real tip position counts
+            point = self.data.mocap_pos[self.marker] if self.mode == "drag" else self.data.site_xpos[self.tip]
+            self.calibration.press_enter(point)
+        else:
+            return
+        self.controller.guarded = not self.calibration.active  # touching the teeth is the point of calibrating
+
+    def _place_jaw(self, incisal_world: np.ndarray) -> None:
+        """Moves the jaws (and their zone markers) so the calibrated incisal edge sits at this world point."""
+        delta = incisal_world - LOWER.to_world(self.calibration_points.incisal)
+        set_world_offset(world_offset() + delta)
+        self.model.body_pos[self.head] += delta
+        self.jaw_offset_file = save_world_offset(world_offset())
+        mujoco.mj_forward(self.model, self.data)
 
     def _run_queued_commands(self) -> None:
         """Executes what the buttons and the voice listener put on the queue since the last frame."""
@@ -184,9 +234,18 @@ class JawSimulation:
             ("target world", _xyz(target * 1000)),
         ]
         rows += [(f"tip {jaw.name} STL", _xyz(jaw.to_stl(tip))) for jaw in JAWS]
+        if self.mode in ("leader", "follower"):
+            rows.append((f"{self.mode} joints", "  ".join(f"{name} {np.degrees(a):.0f}" for name, a in self.source.angles.items())))
         if self.mode == "leader":
             rows.append(("calibration", self.calibration.status() + "  (a / Enter)"))
-            rows.append(("leader joints", "  ".join(f"{name} {np.degrees(a):.0f}" for name, a in self.source.angles.items())))
+        if self.mode == "follower":
+            rows.append(("arm", "DRIVING by the sim (c = release)" if self.source.driving else "released, move it by hand (b = drive)"))
+            rows.append(("jaw offset", _xyz(world_offset() * 1000) + ("  (saved)" if self.jaw_offset_file else "  (not calibrated: n, then m on the incisal edge)")))
+            rows.append(("calibration", self.calibration.status().replace("press Enter", "press m") + "  (n = restart; c = keep defaults after point 1)"))
+            running = f"   running: {self.controller.pose.label}" if self.source.busy else ""
+            refused = f"   REFUSED {self.source.refused}" if self.source.refused else ""
+            rows.append(("last command", f"{self.last_command}{running}{refused}"))
+            rows.append(("commands", FOLLOWER_KEY_HELP))
         if self.mode == "drag":
             rows.append(("operating", "yes" if self.operating else "no (press b)"))
             rows.append(("calibration", self.calibration.status()))
@@ -264,6 +323,8 @@ def main() -> int:
     drag.add_argument("--voice", action="store_true", help="also listen for spoken commands on the default microphone")
     leader = commands.add_parser("leader", help="viewer; the simulated arm copies the real leader arm")
     leader.add_argument("--port", help="serial port of the leader's bus board (default: the one /dev/tty.usbmodem*)")
+    follower = commands.add_parser("follower", help="viewer; the real follower arm without a leader: hand-move, calibrate, drive (JAW_SCALE=1)")
+    follower.add_argument("--port", help="serial port of the follower's bus board (default: the one /dev/tty.usbmodem*)")
     commands.add_parser("route", help="viewer; automatic route with forbidden zones")
     check_parser = commands.add_parser("check", help="headless route run with a short report")
     check_parser.add_argument("--png", type=Path, help="directory for camera images")
@@ -271,8 +332,12 @@ def main() -> int:
 
     if args.command == "check":
         return check(args.png)
-    arm = LeaderArm(args.port or find_port()) if args.command == "leader" else None
-    JawSimulation(args.command, voice=getattr(args, "voice", False), leader=arm).view()
+    if args.command == "follower" and JAW_SCALE != 1.0:
+        parser.error(f"follower mode works on the real jaw: run with JAW_SCALE=1 (now {JAW_SCALE})")
+    port = getattr(args, "port", None) or (find_port() if args.command in ("leader", "follower") else None)
+    arm = LeaderArm(port) if args.command == "leader" else None
+    follower_arm = FollowerArm(port) if args.command == "follower" else None
+    JawSimulation(args.command, voice=getattr(args, "voice", False), leader=arm, follower=follower_arm).view()
     return 0
 
 

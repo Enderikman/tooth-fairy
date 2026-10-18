@@ -12,6 +12,7 @@ The lower jaw is placed teeth-up, the upper jaw is flipped teeth-down above it, 
 the robot at FRONT_X, with OPENING between the tooth tips, centred on BITE_Z.
 """
 
+import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -26,8 +27,23 @@ MM = 0.001  # metres per millimetre
 
 FRONT_X = 0.33  # world x of the incisor edge
 BITE_Z = 0.22  # world height half-way between upper and lower tooth tips
-JAW_SCALE = 3.0  # show-scale: the jaws are drawn and placed this many times larger than the scans (1.0 = real size)
+# Show-scale: the jaws are drawn and placed this many times larger than the scans (1.0 = real size).
+# `JAW_SCALE=1 uv run ...` overrides it; the follower mode (real arm, real jaw) requires 1.
+JAW_SCALE = float(os.environ.get("JAW_SCALE", "3.0"))
 OPENING = 0.035 * JAW_SCALE  # gap between upper and lower tooth tips (mouth opening)
+
+# Where the real jaw turned out to be, relative to the drawn default place (metres, world frame).
+# Set by the follower mode's one-point calibration (jaw_sim/follower.py); zero in every other mode.
+_world_offset = np.zeros(3)
+
+
+def world_offset() -> np.ndarray:
+    return _world_offset.copy()
+
+
+def set_world_offset(offset: np.ndarray) -> None:
+    _world_offset[:] = offset
+
 
 # Rotation STL -> world, as a 3x3 matrix whose columns are where the STL x, y, z axes end up.
 TEETH_UP = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]], dtype=float)  # STL y -> world +z, STL z -> world +x
@@ -78,7 +94,7 @@ class JawModel:
                 0.0,
                 tip_z - down_or_up * self.tip_height_mm * MM,
             ]
-        )
+        ) + _world_offset
 
     def to_world(self, point_mm: np.ndarray) -> np.ndarray:
         """STL point in mm (at JAW_SCALE) -> world point in m."""

@@ -8,3 +8,5 @@ calibration.json
 .DS_Store
 leader_zero.json
 jaw_offset.json
+skills/
+MUJOCO_LOG.TXT

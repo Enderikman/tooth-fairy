@@ -55,6 +55,7 @@ isaac/                    Isaac Sim + LeIsaac + GR00T workflow for an NVIDIA GPU
 | `uv run python -m jaw_sim check --png out/` | Headless: runs the route, then the commands 46/43/33/36/park; prints blocked ticks and tip error per command |
 | `solo robo --calibrate leader` | One-time LeRobot calibration of the leader arm (guided; writes homing offsets into the servos so the middle pose reads 2047) |
 | `uv run mjpython -m jaw_sim leader` | Viewer; the simulated arm copies the real leader arm joint by joint (Feetech bus over `/dev/tty.usbmodem*`, `--port` to pick one). Zones still apply; `a`/Enter calibrates the jaw with the real tip position (zones off while calibrating). If a joint turns the wrong way, flip it in `SIGNS` in `jaw_sim/leader.py` |
+| `JAW_SCALE=1 uv run mjpython -m jaw_sim follower` | Viewer; the real follower arm alone, no leader (same bus board, `--port` to pick one). Starts with torque off: move the arm by hand, the simulated arm copies it. `n` then `m` with the hook tip on the real jaw's incisal edge places the simulated jaw there (one-point calibration, see below). `b` switches torque on and the tooth/park commands drive the real arm along the sim's zone-checked plan; `c` cancels and releases it |
 
 Viewer (needs `mjpython`, installed with mujoco):
 - Move the marker: double-click it, then Ctrl + right-drag. Roll the hook: Ctrl + left-drag (red stick on the marker = hook direction).
@@ -68,6 +69,20 @@ Viewer (needs `mjpython`, installed with mujoco):
   - Voice (`uv run mjpython -m jaw_sim drag --voice`, default microphone, local Parakeet v3 via onnx-asr; `jaw_sim/voice.py`): teeth as two digits "vier sechs" / "four six", "stopp", "parken", "start", "kalibrieren". About one second latency, so the `c` button is the fast stop.
   - Viewer keys (window in front): `6`/`7`/`8`/`9` = tooth 46/43/33/36, `.` = park, `Space` = pause (emergency stop of the simulation).
   - Tooth commands only move the arm in operating mode (`b`); `stop` cancels the move and leaves operating mode.
+
+Follower mode (`JAW_SCALE=1 uv run mjpython -m jaw_sim follower`, real arm + real-size jaw, no leader):
+- Put the real jaw in front of the arm the way the sim draws it: incisors toward the robot, incisal plane level. Only the position is calibrated, not the orientation.
+- Released (start, after `c`): torque off. Move the arm by hand; the screen shows the real joints and where the hook tip is.
+- One-point calibration, two separate keys so a bouncing button cannot restart it: `n` = (re)start, point 1 requested; hold the tip on the
+  incisal edge between 31 and 41 and press `m` = record. The simulated jaw and its red zone dots jump so that the incisal edge is at the tip;
+  everything else is the default jaw (`DEFAULT_*` in `jaw_sim/calibration.py`). `a`/Enter does nothing in this mode.
+  Press `c` to keep those defaults, or go on with `m` at points 2 and 3 to record a full `calibration.json` (needs a restart, as in drag mode).
+  The offset is saved in `jaw_offset.json` and reloaded on the next start.
+- `b`: torque on, the arm holds its pose. `6`/`7`/`8`/`9`/`.` (or voice/buttons) then plan the move in the sim and the real servos follow the
+  sim's joint targets at 50 Hz; the gripper is never driven, close it on the ejector by hand. `c` at any time: plan cancelled, torque off.
+- A command is refused (shown on screen) when the IK cannot reach every keyframe of the plan from the current joints, which happens from the
+  folded rest pose: unfold the arm by hand near the jaw first. The mouse-dragged marker is ignored in this mode; only commands move the arm.
+- `jaw_sim/follower.py`: `FollowerArm` (torque / goal-position writes next to `LeaderArm`'s reads), `FollowerTarget` (released = mirror, driving = planner).
 
 Forbidden zones (lower jaw only, from the three calibration points):
 - Mouth frame: origin = incisal edge between 31 and 41, x across the arch from 46 to 36, y toward the back of the mouth, depth straight down from the incisal plane.

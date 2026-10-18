@@ -81,25 +81,42 @@ class CalibrationRecorder:
         self.last_saved: Path | None = None
         self.discarded = False
 
-    def press_enter(self, marker_world: np.ndarray) -> None:
-        """Start calibration, or record the current marker position for the requested point.
+    def press_enter(self, marker_world: np.ndarray) -> str | None:
+        """One-button flow: start calibration if idle, else record the requested point (see `record`)."""
+        if not self.active:
+            self.start()
+            return None
+        return self.record(marker_world)
+
+    def start(self) -> None:
+        """(Re)start calibration: point 1 is requested, anything recorded before is dropped."""
+        self.active = True
+        self.recorded = {}
+        self.discarded = False
+
+    def record(self, marker_world: np.ndarray) -> str | None:
+        """Record the marker position for the requested point; returns its name, None when not calibrating.
 
         A recording whose points do not form a jaw (e.g. the button pressed three times at one
         spot) is discarded, so an existing good calibration.json is never overwritten by it.
         """
         if not self.active:
-            self.active = True
-            self.recorded = {}
-            self.discarded = False
-            return
-        self.recorded[self.current_point()] = marker_world.copy()
+            return None
+        name = self.current_point()
+        self.recorded[name] = marker_world.copy()
         if len(self.recorded) == len(REFERENCE_POINTS):
             self.active = False
-            calibration = JawCalibration(*(LOWER.to_stl(self.recorded[name]) for name in REFERENCE_POINTS))
+            calibration = JawCalibration(*(LOWER.to_stl(self.recorded[point]) for point in REFERENCE_POINTS))
             if calibration.usable():
                 self.last_saved = self._save()
             else:
                 self.discarded = True
+        return name
+
+    def cancel(self) -> None:
+        """Leave calibration mode; the points recorded so far are dropped."""
+        self.active = False
+        self.recorded = {}
 
     def current_point(self) -> str:
         return REFERENCE_POINTS[len(self.recorded)]

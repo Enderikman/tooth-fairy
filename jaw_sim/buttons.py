@@ -14,10 +14,12 @@ import queue
 from pynput import keyboard
 
 BUTTONS = {
-    "a": "calibrate",  # start calibration / record the next reference point
+    "a": "calibrate",  # start calibration / record the next reference point (drag and leader mode)
     "b": "operate",  # operating mode: tooth commands are executed
     "c": "stop",  # cancel the current move and hold position; leaves operating mode
     "d": "park",  # pull the ejector out of the mouth to the park pose
+    "n": "calibrate_start",  # follower mode: (re)start calibration, point 1 is requested
+    "m": "calibrate_point",  # follower mode: record the requested point at the real tip
 }
 
 
