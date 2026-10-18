@@ -22,7 +22,7 @@ from .zones import ForbiddenZones
 
 JAW_RGBA = [0.95, 0.93, 0.85, 1]
 FORBIDDEN_RGBA = [1.0, 0.1, 0.1, 0.35]
-FORBIDDEN_MARKER_RADIUS = 0.0008
+FORBIDDEN_MARKER_RADIUS = 0.0008 * JAW_SCALE  # m, 0.8 mm at real size
 FORBIDDEN_GROUP = 2  # site group; toggle in the viewer under Rendering > Site groups
 ZONE_GRID_STEP = 0.004 * JAW_SCALE  # spacing of the forbidden-zone sample points (m); 4 mm at real size
 ZONE_GRID_MARGIN = 0.008 * JAW_SCALE  # how far the sampled box reaches beyond the jaws (m)
