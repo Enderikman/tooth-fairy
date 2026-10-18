@@ -24,8 +24,8 @@ JAW_RGBA = [0.95, 0.93, 0.85, 1]
 FORBIDDEN_RGBA = [1.0, 0.1, 0.1, 0.35]
 FORBIDDEN_MARKER_RADIUS = 0.0008
 FORBIDDEN_GROUP = 2  # site group; toggle in the viewer under Rendering > Site groups
-ZONE_GRID_STEP = 0.004  # spacing of the forbidden-zone sample points (m)
-ZONE_GRID_MARGIN = 0.008  # how far the sampled box reaches beyond the jaws (m)
+ZONE_GRID_STEP = 0.004 * JAW_SCALE  # spacing of the forbidden-zone sample points (m); 4 mm at real size
+ZONE_GRID_MARGIN = 0.008 * JAW_SCALE  # how far the sampled box reaches beyond the jaws (m)
 HOOK_STICK_LENGTH = 0.012  # m, the stick on the target marker showing the hook direction
 
 GRIP_CENTER_Z = -0.098  # gripper frame: point between the jaws (same as the vendored "gripperframe" site)
