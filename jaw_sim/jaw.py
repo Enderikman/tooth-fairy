@@ -26,7 +26,8 @@ MM = 0.001  # metres per millimetre
 
 FRONT_X = 0.33  # world x of the incisor edge
 BITE_Z = 0.22  # world height half-way between upper and lower tooth tips
-OPENING = 0.035  # gap between upper and lower tooth tips (mouth opening)
+JAW_SCALE = 3.0  # show-scale: the jaws are drawn and placed this many times larger than the scans (1.0 = real size)
+OPENING = 0.035 * JAW_SCALE  # gap between upper and lower tooth tips (mouth opening)
 
 # Rotation STL -> world, as a 3x3 matrix whose columns are where the STL x, y, z axes end up.
 TEETH_UP = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]], dtype=float)  # STL y -> world +z, STL z -> world +x
@@ -43,8 +44,8 @@ class JawModel:
 
     @cached_property
     def bounds_mm(self) -> np.ndarray:
-        """[[min x, min y, min z], [max x, max y, max z]] of the STL, in mm."""
-        return trimesh.load(self.file).bounds
+        """[[min x, min y, min z], [max x, max y, max z]] of the STL, in mm, at JAW_SCALE."""
+        return trimesh.load(self.file).bounds * JAW_SCALE
 
     @property
     def tip_height_mm(self) -> float:
@@ -80,7 +81,7 @@ class JawModel:
         )
 
     def to_world(self, point_mm: np.ndarray) -> np.ndarray:
-        """STL point in mm -> world point in m."""
+        """STL point in mm (at JAW_SCALE) -> world point in m."""
         return self.position() + self.rotation @ (np.asarray(point_mm) * MM)
 
     def to_stl(self, point_world: np.ndarray) -> np.ndarray:

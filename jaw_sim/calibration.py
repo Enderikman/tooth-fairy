@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .jaw import LOWER
+from .jaw import JAW_SCALE, LOWER
 
 CALIBRATION_FILE = Path(__file__).resolve().parent.parent / "calibration.json"
 
@@ -50,7 +50,7 @@ class JawCalibration:
         """Values of the printed jaw; the incisal edge is read from the STL bounds."""
         bounds = LOWER.bounds_mm
         incisal = np.array([(bounds[0, 0] + bounds[1, 0]) / 2, LOWER.tip_height_mm, LOWER.incisor_z_mm])
-        molar = np.array([DEFAULT_HALF_WIDTH_MM, -DEFAULT_GUM_LINE_BELOW_MM, DEFAULT_ARCH_DEPTH_MM])
+        molar = np.array([DEFAULT_HALF_WIDTH_MM, -DEFAULT_GUM_LINE_BELOW_MM, DEFAULT_ARCH_DEPTH_MM]) * JAW_SCALE
         return cls(incisal, incisal + molar, incisal + molar * (-1, 1, 1))
 
     @classmethod

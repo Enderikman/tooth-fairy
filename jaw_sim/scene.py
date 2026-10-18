@@ -17,7 +17,7 @@ import numpy as np
 from dental_sim.scene import TIP_RGBA, TOOL_AXIS_QUAT, TUBE_AXIS_XY, TUBE_RGBA, VISUAL_ONLY, DentalSceneBuilder, Mouth
 
 from .ejector import STL_TO_GRIPPER, SalivaEjector
-from .jaw import BITE_Z, FRONT_X, JAWS, LOWER, MM, JawModel
+from .jaw import BITE_Z, FRONT_X, JAW_SCALE, JAWS, LOWER, MM, JawModel
 from .zones import ForbiddenZones
 
 JAW_RGBA = [0.95, 0.93, 0.85, 1]
@@ -66,7 +66,7 @@ class JawSceneBuilder(DentalSceneBuilder):
         self.spec.add_mesh(
             name=f"{jaw.name}_teeth",
             file=str(jaw.sim_mesh()),
-            scale=[MM, MM, MM],
+            scale=[MM * JAW_SCALE] * 3,
             inertia=mujoco.mjtMeshInertia.mjMESH_INERTIA_SHELL,  # scans are open surfaces, not solids
         )
         head.add_geom(
