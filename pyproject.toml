@@ -1,0 +1,18 @@
+[project]
+name = "dental-suction-sim"
+version = "0.1.0"
+description = "MuJoCo simulation of an SO-101 arm holding a dental suction tube"
+requires-python = ">=3.12"
+dependencies = [
+    "fast-simplification>=0.2.0",
+    "mujoco>=3.16.0",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "trimesh>=5.1.1",
+]
+
+[tool.uv]
+# The interactive viewer with keyboard buttons and on-screen text (mujoco.viewer.launch_passive,
+# started via `mjpython`) needs a "framework" Python on macOS. Homebrew's python@3.12 is one;
+# uv's own downloaded Pythons are not.
+python-preference = "only-system"
