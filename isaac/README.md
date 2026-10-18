@@ -1,10 +1,32 @@
-# Isaac Sim + LeIsaac + GR00T: stack 3 cubes with the SO-101
-
-Pipeline: Isaac Sim scene -> demonstrations (scripted or teleoperated) -> LeRobot dataset ->
-GR00T N1.6 fine-tune -> closed-loop evaluation in Isaac Sim -> real SO-101.
+# Isaac Sim on the GPU VM: dental demo + stack-3-cubes GR00T pipeline
 
 Nothing in this folder can run on the Mac except `mac_leader.sh`: Isaac Sim needs Linux plus an NVIDIA GPU with RT cores.
 The MuJoCo sims in the repo root are the local, GPU-free counterpart.
+
+## Dental demo (jaw_sim brain in Isaac Sim)
+
+```bash
+ssh isaac
+cd ~/hackathonNebius_2026
+bash isaac/run.sh dental route                                   # automatic route, WebRTC stream
+bash isaac/run.sh dental teeth                                   # operate, then teeth 46 -> 43 -> 33 -> 36 -> park
+LIVESTREAM=0 bash isaac/run.sh dental teeth --seconds 25 --video out/dental_teeth.mp4   # headless video
+```
+
+- `dental/brain.py` (`DentalBrain`): runs jaw_sim unchanged (forbidden zones, routes, IK) on a headless MuJoCo model
+  and returns six joint targets in radians. These are the same values the real SO-101 follower takes via LeRobot.
+- `dental/run_isaac.py`: LeIsaac's SO-101 USD + your jaw STLs + the saliva ejector + forbidden-zone dots + target
+  marker (green / red when blocked). Every 20 ms: brain targets -> articulation position targets.
+- Frames: LeIsaac's robot USD is rotated 90 deg and offset 33 mm against the MJCF the brain uses. The robot root is
+  placed with a fitted transform so both worlds coincide (25 random poses, 3.2 mm mean / 6.8 mm max residual).
+- A slow per-joint integral trim removes the ~2 deg gravity sag of the simulated servos.
+  Measured on the `teeth` run: Isaac ejector tip within 0.9-6.2 mm of the brain's tip.
+- After editing jaw_sim on the Mac: `rsync -a --exclude .venv --exclude .git ./ isaac:~/hackathonNebius_2026/`.
+
+## Stack-3-cubes GR00T pipeline
+
+Pipeline: Isaac Sim scene -> demonstrations (scripted or teleoperated) -> LeRobot dataset ->
+GR00T N1.6 fine-tune -> closed-loop evaluation in Isaac Sim -> real SO-101.
 
 ## 1. Get a GPU machine
 

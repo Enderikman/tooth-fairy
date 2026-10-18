@@ -6,3 +6,4 @@ models/jaw/simplified/
 models/sucker/assembled/
 calibration.json
 .DS_Store
+leader_zero.json

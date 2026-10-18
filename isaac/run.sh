@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Stack-3-cubes workflow on the GPU VM. Run `bash isaac/run.sh help`.
+# Isaac Sim workflows on the GPU VM: dental demo (jaw_sim brain) and the stack-3-cubes GR00T pipeline.
+# Run `bash isaac/run.sh help`.
 set -euo pipefail
 
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="${WORK:-$HOME/hackathon}"
 CONDA_DIR="${CONDA_DIR:-$HOME/miniconda3}"
 LEISAAC_DIR="$WORK/leisaac"
@@ -98,6 +100,14 @@ case "$cmd" in
       --policy_type=gr00tn1.6 --policy_host=localhost --policy_port=5555 \
       --policy_action_horizon=16 --policy_language_instruction="$PROMPT" \
       --device=cuda --enable_cameras "${VIEW[@]}"
+    ;;
+  dental)  # dental [route|teeth] [extra args]  jaw_sim brain driving the SO-101 in Isaac Sim (e.g. --video out/x.mp4 --seconds 30)
+    leisaac
+    export LEISAAC_ASSETS_ROOT="$LEISAAC_DIR/assets"  # we run from our repo, not from the LeIsaac checkout
+    cd "$REPO"
+    mode="${1:-route}"
+    shift || true
+    python -m isaac.dental.run_isaac --mode "$mode" --device cuda "$@" "${VIEW[@]}"
     ;;
   *)
     sed -n 's/^  [a-z]*)  # /  /p' "$0"

@@ -51,18 +51,35 @@ isaac/                    Isaac Sim + LeIsaac + GR00T workflow for an NVIDIA GPU
 | Command | What it does |
 | --- | --- |
 | `uv run mjpython -m jaw_sim drag` | Viewer; you steer the ejector tip with the green marker. The arm follows only where allowed; the marker turns red when blocked |
-| `uv run mjpython -m jaw_sim route` | Viewer; automatic: insert the hook flat, roll it down behind the lower front teeth, sweep left/right |
-| `uv run python -m jaw_sim check --png out/` | Headless route run; prints how often the zones blocked the target |
+| `uv run mjpython -m jaw_sim route` | Viewer; automatic: park in front of the mouth, enter flat, lower the hook next to tooth 46, sweep 46 <-> 43 |
+| `uv run python -m jaw_sim check --png out/` | Headless: runs the route, then the commands 46/43/33/36/park; prints blocked ticks and tip error per command |
+| `solo robo --calibrate leader` | One-time LeRobot calibration of the leader arm (guided; writes homing offsets into the servos so the middle pose reads 2047) |
+| `uv run mjpython -m jaw_sim leader` | Viewer; the simulated arm copies the real leader arm joint by joint (Feetech bus over `/dev/tty.usbmodem*`, `--port` to pick one). Zones still apply; `a`/Enter calibrates the jaw with the real tip position (zones off while calibrating). If a joint turns the wrong way, flip it in `SIGNS` in `jaw_sim/leader.py` |
 
 Viewer (needs `mjpython`, installed with mujoco):
 - Move the marker: double-click it, then Ctrl + right-drag. Roll the hook: Ctrl + left-drag (red stick on the marker = hook direction).
 - Top-left text: tip position in world mm and in both jaw STL frames (mm), hook roll, allowed/blocked.
 - Red/green/blue arrows at each jaw origin = that STL's x/y/z axes.
-- Enter: calibration mode. Asks for 4 reference points (`jaw_sim/calibration.py`); place the marker, press Enter per point; saved to `calibration.json`.
+- Enter: calibration mode, 3 points in order: incisal edge between 31 and 41 (on the tooth), tooth 36 lingual gum line, tooth 46 lingual gum line.
+  Place the marker on each point and press Enter; after the third point the result is saved to `calibration.json`. Restart the viewer to use it.
+  Without a `calibration.json` the hand-measured printed adult jaw is used as default.
+- Commands (drag mode) all go through `JawSimulation.command(name)`:
+  - Hardware buttons (MK424Pro pad, types the letters; `jaw_sim/buttons.py`, works in any window): `a` calibrate (same as Enter), `b` operate, `c` stop, `d` park.
+  - Voice (`uv run mjpython -m jaw_sim drag --voice`, default microphone, local Parakeet v3 via onnx-asr; `jaw_sim/voice.py`): teeth as two digits "vier sechs" / "four six", "stopp", "parken", "start", "kalibrieren". About one second latency, so the `c` button is the fast stop.
+  - Viewer keys (window in front): `6`/`7`/`8`/`9` = tooth 46/43/33/36, `.` = park, `Space` = pause (emergency stop of the simulation).
+  - Tooth commands only move the arm in operating mode (`b`); `stop` cancels the move and leaves operating mode.
+
+Forbidden zones (lower jaw only, from the three calibration points):
+- Mouth frame: origin = incisal edge between 31 and 41, x across the arch from 46 to 36, y toward the back of the mouth, depth straight down from the incisal plane.
+- Lingual tooth surface is a parabola `y = a * x**2`, with `a` fitted from the gum-line points of 36 and 46.
+- Allowed corridor: a 20 mm wide strip on the tongue side of that parabola, running from 46 round to 36.
+- Maximum depth below the incisal plane scales with jaw size: `depth_max = 0.0097 * JC + 2.093` mm, where `JC` = arch width * arch depth in mm^2
+  (JC 300 mm^2, a small child: 5 mm; JC 1848 mm^2, the printed adult jaw: 20 mm).
+- Above the incisal plane everything is allowed, otherwise the hook could not enter the mouth.
 
 Code:
-- Your algorithm: `jaw_sim/zones.py`, `lower_jaw_forbidden(x, y, z)` and `upper_jaw_forbidden(x, y, z)`, millimetres in each STL's own frame.
-  Current bodies are an example: forbidden inside the cast or within 3 mm of its surface (works for any jaw scan).
+- `jaw_sim/zones.py`: `ForbiddenZones`/`LowerJawCorridor` implement the corridor rule above from a `JawCalibration`.
+- `jaw_sim/calibration.py`: `JawCalibration` (the three stored points) and `CalibrationRecorder` (the Enter-key flow).
 - `jaw_sim/jaw.py` places any `upper_teeth.stl` / `lower_teeth.stl` from their measured size (teeth toward +y, incisors toward -z, mm).
   Files above 200 000 faces (MuJoCo's limit) get a simplified copy in `models/jaw/simplified/`.
 - `jaw_sim/ejector.py` joins `models/sucker/saliva_ejector_solid_half_A/B.stl` into one tube; the gripper holds the straight shaft,

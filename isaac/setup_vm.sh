@@ -82,10 +82,17 @@ setup_isaac() {
 
   if ! python -c "import isaaclab" 2>/dev/null; then
     step "Isaac Lab (LeIsaac submodule)"
+    # flatdict (an Isaac Lab dependency) has a setup.py that imports pkg_resources, which current
+    # setuptools no longer ships: build it once against an older setuptools, without isolation.
+    pip install "setuptools<81"
+    pip install --no-build-isolation flatdict==4.0.1
     (cd dependencies/IsaacLab && ./isaaclab.sh --install)
   fi
 
   step "LeIsaac + LeRobot 0.3.3 (dataset v2 conversion for GR00T N1.6)"
+  # evdev (a LeRobot dependency) must be compiled with the system gcc: the conda CUDA toolkit's
+  # compiler ships older kernel headers than the /usr/include/linux/input.h evdev reads.
+  CC=/usr/bin/gcc pip install evdev
   pip install -e "source/leisaac[gr00t,remote]"
   pip install lerobot==0.3.3
   pip install numpy==1.26.0  # LeIsaac docs: lerobot pulls a numpy that breaks Isaac Lab
